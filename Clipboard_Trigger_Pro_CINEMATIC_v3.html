@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CLIPBOARD TRIGGER PRO | THE CINEMATIC EXPERIENCE</title>
+    <!-- 高级字体库 -->
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;500;800&family=Outfit:wght@100;400;900&family=Syne:wght@800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #020205;
+            --primary: #00f2ff;
+            --primary-rgb: 0, 242, 255;
+            --secondary: #7000ff;
+            --accent: #ff00c8;
+            --text: #ffffff;
+            --glass: rgba(255, 255, 255, 0.02);
+            --border: rgba(255, 255, 255, 0.08);
+            --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+            --ease-in-out: cubic-bezier(0.83, 0, 0.17, 1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Outfit', sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            perspective: 1000px;
+        }
+
+        /* --- 动态粒子 & 氛围背景 --- */
+        #main-canvas { position: fixed; top: 0; left: 0; z-index: -1; }
+        .vignette {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle at center, transparent 20%, rgba(0,0,0,0.9) 100%);
+            pointer-events: none; z-index: 5;
+        }
+        .scanline {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 4px, 3px 100%;
+            z-index: 10; pointer-events: none; opacity: 0.1;
+        }
+
+        /* --- 幻灯片架构 --- */
+        .viewport {
+            height: 100vh;
+            width: 100%;
+            transition: transform 1.2s var(--ease-in-out);
+            will-change: transform;
+        }
+        .slide {
+            height: 100vh;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 12vw;
+            position: relative;
+            flex-shrink: 0;
+            opacity: 0;
+            transform: translateZ(-200px) rotateX(10deg);
+            transition: 1s var(--ease-out);
+        }
+        .slide.active {
+            opacity: 1;
+            transform: translateZ(0) rotateX(0deg);
+        }
+
+        /* --- 玻璃拟态设计 --- */
+        .glass-panel {
+            background: var(--glass);
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            border: 1px solid var(--border);
+            border-radius: 2.5rem;
+            padding: 4rem;
+            box-shadow: 0 100px 200px -50px rgba(0,0,0,0.8);
+            position: relative;
+        }
+        .glass-panel::after {
+            content: ''; position: absolute; top: -1px; left: -1px; right: -1px; bottom: -1px;
+            border-radius: 2.5rem; background: linear-gradient(135deg, var(--border), transparent 50%);
+            z-index: -1;
+        }
+
+        /* --- 文字美学 --- */
+        h1 {
+            font-family: 'Syne', sans-serif;
+            font-size: clamp(4rem, 12vw, 10rem);
+            line-height: 0.8;
+            text-transform: uppercase;
+            letter-spacing: -0.06em;
+            background: linear-gradient(to bottom, #fff 0%, #333 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .slide-title { font-size: 5rem; font-weight: 900; margin-bottom: 2rem; color: #fff; }
+        .typewriter-content { font-family: 'JetBrains Mono', monospace; font-size: 1.2rem; color: rgba(255,255,255,0.6); line-height: 1.6; }
+
+        /* --- 输入场景专用 UI --- */
+        .window-frame {
+            background: #1e1e1e;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.5);
+            width: 100%; border: 1px solid #333;
+        }
+        .window-header {
+            background: #2d2d2d; padding: 10px 15px; display: flex; gap: 8px;
+        }
+        .dot { width: 12px; height: 12px; border-radius: 50%; }
+        .dot-r { background: #ff5f56; } .dot-y { background: #ffbd2e; } .dot-g { background: #27c93f; }
+
+        /* 场景 A: 邮件 */
+        .email-view { background: #fff; color: #333; padding: 30px; height: 350px; overflow: hidden; }
+        
+        /* 场景 B: IDE */
+        .ide-view { background: #1a1a1a; color: #d4d4d4; padding: 20px; font-family: 'JetBrains Mono'; height: 350px; position: relative; }
+        .ide-cursor { display: inline-block; width: 8px; height: 18px; background: var(--primary); animation: blink 1s infinite; vertical-align: middle; }
+        
+        .suggestion-box {
+            position: absolute; left: 50px; top: 80px; width: 250px;
+            background: #252526; border: 1px solid #454545; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            z-index: 100; display: none;
+        }
+        .suggestion-item { padding: 8px 12px; font-size: 13px; display: flex; justify-content: space-between; }
+        .suggestion-item.selected { background: #094771; color: #fff; }
+        .suggestion-search { background: #3c3c3c; padding: 4px 8px; font-size: 12px; border-bottom: 1px solid #454545; }
+
+        /* --- 导航控制 --- */
+        .nav-controls {
+            position: fixed; right: 4rem; top: 50%; transform: translateY(-50%);
+            display: flex; flex-direction: column; gap: 1.5rem; z-index: 1000;
+        }
+        .nav-dot {
+            width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.3);
+            cursor: pointer; transition: 0.4s;
+        }
+        .nav-dot.active { border-color: var(--primary); background: var(--primary); box-shadow: 0 0 20px var(--primary); transform: scale(1.4); }
+
+        /* --- 动画 --- */
+        @keyframes blink { 50% { opacity: 0; } }
+        @keyframes marquee { from { transform: translateX(100%); } to { transform: translateX(-100%); } }
+    </style>
+</head>
+<body>
+
+    <canvas id="main-canvas"></canvas>
+    <div class="vignette"></div>
+    <div class="scanline"></div>
+
+    <div class="nav-controls" id="nav-dots"></div>
+
+    <main class="viewport" id="viewport">
+        
+        <!-- Slide 1: Hero -->
+        <section class="slide active">
+            <div style="flex: 2;">
+                <span class="tag" style="animation: float 3s infinite alternate;">V10.2 STABLE RELEASE</span>
+                <h1 style="margin-top: 1rem;">CLIPBOARD<br><span style="color: var(--primary); -webkit-text-fill-color: initial;">TRIGGER</span><br>PRO</h1>
+            </div>
+            <div style="flex: 1; display: flex; justify-content: flex-end;">
+                <div class="glass-panel" style="width: 350px; height: 350px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid var(--primary);">
+                    <div style="text-align: center;">
+                        <div style="font-size: 6rem; filter: drop-shadow(0 0 20px var(--primary));">⌨️</div>
+                        <div style="font-family: 'JetBrains Mono'; color: var(--primary); font-weight: 800; letter-spacing: 0.5em; margin-top: 10px;">ULTRA FAST</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 2: Setup -->
+        <section class="slide">
+            <div class="glass-panel" style="width: 100%;">
+                <span class="tag">01. 规则预设</span>
+                <h2 class="slide-title">定义您的生产力</h2>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5rem; margin-top: 3rem;">
+                    <div>
+                        <p class="typewriter-content" style="margin-bottom: 1.5rem;">触发简码 (TRIGGER)</p>
+                        <input type="text" id="config-trigger" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border); padding: 2rem; width: 100%; border-radius: 1rem; color: #fff; font-size: 2rem; font-family: 'JetBrains Mono';" value="abc">
+                    </div>
+                    <div>
+                        <p class="typewriter-content" style="margin-bottom: 1.5rem;">爆发内容 (CONTENT)</p>
+                        <textarea id="config-content" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border); padding: 2rem; width: 100%; border-radius: 1rem; color: #fff; font-size: 1.2rem; font-family: 'JetBrains Mono'; height: 160px;">你好！这是一个由 Clipboard Trigger Pro 触发的极致爆发体验。每一行代码都为您节省了宝贵的时间。</textarea>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 3: Explosion Experiment -->
+        <section class="slide">
+            <div style="text-align: center; width: 100%;">
+                <span class="tag">02. 实验场</span>
+                <h2 class="slide-title">输入并见证炸裂</h2>
+                <div style="max-width: 800px; margin: 4rem auto; position: relative;">
+                    <input type="text" id="test-input" style="background: none; border: none; border-bottom: 3px solid var(--border); width: 100%; text-align: center; font-size: 6rem; color: var(--primary); font-family: 'JetBrains Mono'; outline: none;" placeholder="TYPE HERE">
+                </div>
+                <div id="test-status" style="font-family: 'JetBrains Mono'; color: rgba(255,255,255,0.2); letter-spacing: 0.3em;">SYSTEM WAITING...</div>
+            </div>
+        </section>
+
+        <!-- Slide 4: Scenario A - Email -->
+        <section class="slide">
+            <div style="flex: 1.2;">
+                <div class="window-frame">
+                    <div class="window-header">
+                        <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+                        <span style="margin-left: 20px; font-size: 12px; color: #999;">新邮件 - 商务合作</span>
+                    </div>
+                    <div class="email-view" id="email-client">
+                        <div style="margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                            <span style="color: #999;">收件人:</span> <span style="font-weight: bold;">Core_Client@corp.com</span>
+                        </div>
+                        <div id="email-trigger-area" style="font-size: 1.1rem; line-height: 1.6;">
+                            <span id="email-text"></span><span class="ide-cursor" style="background: #333;"></span>
+                        </div>
+                    </div>
+                </div>
+                <button onclick="startEmailDemo()" style="margin-top: 2rem; background: var(--primary); border: none; padding: 1rem 2rem; border-radius: 100px; font-weight: 900; cursor: pointer; color: #000;">点击启动 [场景 A] 演示</button>
+            </div>
+            <div style="flex: 1; padding-left: 5vw;">
+                <span class="tag">SCENARIO A</span>
+                <h2 class="slide-title">商务办公<br><span style="font-size: 3rem; opacity: 0.6;">爆发。</span></h2>
+                <p class="typewriter-content">输入 "em" 瞬间生成复杂的邮件模版。基于 PyQt6 的零延迟注入，让您的效率超越打字员的极限。</p>
+            </div>
+        </section>
+
+        <!-- Slide 5: Scenario B - IDE -->
+        <section class="slide">
+            <div style="flex: 1; padding-right: 5vw;">
+                <span class="tag">SCENARIO B</span>
+                <h2 class="slide-title">代码重构<br><span style="font-size: 3rem; opacity: 0.6;">逻辑。</span></h2>
+                <p class="typewriter-content">不仅仅是替换。是基于语义的辅助。通过三斜杠备注快速召唤建议菜单，搜索并精准完成代码爆发。</p>
+                <button onclick="startCodeDemo()" style="margin-top: 2rem; border: 2px solid var(--secondary); background: none; color: #fff; padding: 1rem 2rem; border-radius: 100px; font-weight: 900; cursor: pointer;">点击启动 [场景 B] 演示</button>
+            </div>
+            <div style="flex: 1.2;">
+                <div class="window-frame">
+                    <div class="window-header">
+                        <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+                        <span style="margin-left: 20px; font-size: 12px; color: #999;">main.py - Visual Studio Code</span>
+                    </div>
+                    <div class="ide-view" id="ide-client">
+                        <div style="color: #6a9955;"># 智能逻辑演示</div>
+                        <div style="margin-top: 10px;">
+                            <span style="color: #569cd6;">class</span> <span style="color: #4ec9b0;">VisualEngine</span>:<br>
+                            &nbsp;&nbsp;&nbsp;&nbsp;<span id="code-line"></span><span class="ide-cursor"></span>
+                        </div>
+                        
+                        <!-- 模拟建议窗口 -->
+                        <div class="suggestion-box" id="suggest-win">
+                            <div class="suggestion-search" id="suggest-search">搜索: </div>
+                            <div class="suggestion-item" id="item-1">Opacity Control <span>Alt+1</span></div>
+                            <div class="suggestion-item" id="item-2">Scale Factor <span>Alt+2</span></div>
+                            <div class="suggestion-item" id="item-3">Transform Logic <span>Alt+3</span></div>
+                            <div class="suggestion-item" id="item-4">Blur Effect <span>Alt+4</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 6: Excel Power -->
+        <section class="slide">
+            <div style="text-align: center; width: 100%;">
+                <h2 class="slide-title">管理，如表格般简单</h2>
+                <div class="glass-panel" style="padding: 0; overflow: hidden; max-width: 1000px; margin: 0 auto;">
+                    <table style="width: 100%; border-collapse: collapse; text-align: left; font-family: 'JetBrains Mono';">
+                        <tr style="background: rgba(255,255,255,0.05); color: var(--primary);">
+                            <th style="padding: 2rem;">INDEX</th><th style="padding: 2rem;">TRIGGER</th><th style="padding: 2rem;">PREVIEW</th><th style="padding: 2rem;">STATUS</th>
+                        </tr>
+                        <tr><td style="padding: 1.5rem;">001</td><td style="padding: 1.5rem;">nh</td><td style="padding: 1.5rem; opacity: 0.5;">你好世界...</td><td style="padding: 1.5rem;">READY</td></tr>
+                        <tr style="background: rgba(255,255,255,0.02);"><td style="padding: 1.5rem;">002</td><td style="padding: 1.5rem;">pay</td><td style="padding: 1.5rem; opacity: 0.5;">收款信息...</td><td style="padding: 1.5rem;">READY</td></tr>
+                        <tr><td style="padding: 1.5rem;">003</td><td style="padding: 1.5rem;">em</td><td style="padding: 1.5rem; opacity: 0.5;">商务邀请...</td><td style="padding: 1.5rem;">READY</td></tr>
+                    </table>
+                </div>
+                <p style="margin-top: 3rem; color: rgba(255,255,255,0.4);">直接编辑 Excel，软件瞬间同步。处理海量规则，依然从容。</p>
+            </div>
+        </section>
+
+        <!-- Slide 7: History Monitor -->
+        <section class="slide">
+            <div style="flex: 1;">
+                <div class="glass-panel">
+                    <div style="font-family: 'JetBrains Mono'; color: var(--accent); margin-bottom: 2rem;">[ SYSTEM_LOG_MONITOR ]</div>
+                    <div id="history-log" style="font-family: 'JetBrains Mono'; font-size: 0.9rem; line-height: 2;">
+                        > Clipboard Changed: "HTTP://..."<br>
+                        > Logged to Excel database.<br>
+                        > Trigger pattern "nh" detected.<br>
+                        > Executing replacement...
+                    </div>
+                </div>
+            </div>
+            <div style="flex: 1; padding-left: 8vw;">
+                <h2 class="slide-title">剪切板历史<br>全量捕获。</h2>
+                <p class="typewriter-content">不仅是触发。更是大脑。自动监控并记录所有剪切板内容到 Excel 数据库，实现数据的终身可追溯。</p>
+            </div>
+        </section>
+
+        <!-- Slide 8: 10.2 Stability -->
+        <section class="slide">
+            <div style="text-align: center; width: 100%;">
+                <div style="font-size: 20rem; font-weight: 900; opacity: 0.03; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);">10.2</div>
+                <h2 class="slide-title">极致稳定</h2>
+                <div style="display: flex; justify-content: center; gap: 10rem; margin-top: 5rem;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 5rem; font-weight: 900; color: var(--primary);">0.01s</div>
+                        <div class="tag">REPLACE DELAY</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 5rem; font-weight: 900; color: var(--secondary);">0%</div>
+                        <div class="tag">CRASH RATE</div>
+                    </div>
+                </div>
+                <p style="margin-top: 5rem; max-width: 600px; margin-left: auto; margin-right: auto;">V10.2 修复版。我们重构了 pynput 事件循环，确保在任何高压输入场景下都能精准命中目标。</p>
+            </div>
+        </section>
+
+        <!-- Slide 9: Performance O(1) -->
+        <section class="slide">
+            <div style="position: absolute; width: 100%; height: 100%; overflow: hidden; z-index: -1; opacity: 0.05;">
+                <div style="font-size: 30rem; font-weight: 900; white-space: nowrap; animation: marquee 15s linear infinite;">PERFORMANCE PERFORMANCE PERFORMANCE</div>
+            </div>
+            <div style="text-align: center; width: 100%;">
+                <h2 class="slide-title">O(1) 算法之美</h2>
+                <p class="typewriter-content" style="max-width: 700px; margin: 0 auto;">基于 Python 字典实现的哈希查找。无论您的规则库是 10 条还是 10,000 条，响应速度恒定在纳秒级别。这就是专业工程师的追求。</p>
+            </div>
+        </section>
+
+        <!-- Slide 10: Final -->
+        <section class="slide">
+            <div style="text-align: center; width: 100%;">
+                <h1 style="font-size: 8rem; margin-bottom: 3rem;">REWRITE<br>YOUR SPEED</h1>
+                <div style="display: inline-block; padding: 2.5rem 6rem; border: 2px solid var(--primary); border-radius: 100px; cursor: pointer; transition: 0.4s; position: relative; overflow: hidden;" onmouseover="this.style.background='var(--primary)'; this.style.color='#000';" onmouseout="this.style.background='none'; this.style.color='#fff';">
+                    <span style="font-size: 2rem; font-weight: 900; letter-spacing: 0.5em;">DOWNLOAD NOW</span>
+                </div>
+                <p style="margin-top: 4rem; opacity: 0.4; font-family: 'JetBrains Mono';">v10-2 STABLE FIXED RELEASE // © 2026 EFFICIENCY LABS</p>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        // --- 翻页控制器 (视口锁定) ---
+        let currentIdx = 0;
+        const totalSlides = 10;
+        const viewport = document.getElementById('viewport');
+        const dotsNav = document.getElementById('nav-dots');
+
+        for(let i=0; i<totalSlides; i++) {
+            const d = document.createElement('div');
+            d.className = `nav-dot ${i===0?'active':''}`;
+            d.onclick = () => goToSlide(i);
+            dotsNav.appendChild(d);
+        }
+
+        function goToSlide(n) {
+            if (n < 0 || n >= totalSlides) return;
+            currentIdx = n;
+            viewport.style.transform = `translateY(-${currentIdx * 100}vh)`;
+            document.querySelectorAll('.nav-dot').forEach((d, i) => d.classList.toggle('active', i === currentIdx));
+            document.querySelectorAll('.slide').forEach((s, i) => s.classList.toggle('active', i === currentIdx));
+            
+            // 触发打字机效果 (针对每一页的 p 标签)
+            const activeP = document.querySelectorAll('.slide')[currentIdx].querySelector('.typewriter-content');
+            if (activeP && !activeP.dataset.typed) {
+                const text = activeP.innerText;
+                activeP.innerText = '';
+                typeWriter(activeP, text);
+                activeP.dataset.typed = "true";
+            }
+        }
+
+        function typeWriter(el, text, speed = 30) {
+            let i = 0;
+            function type() {
+                if (i < text.length) {
+                    el.innerHTML += text.charAt(i);
+                    i++;
+                    setTimeout(type, speed);
+                }
+            }
+            type();
+        }
+
+        let isLocked = false;
+        window.addEventListener('wheel', (e) => {
+            if (isLocked) return;
+            isLocked = true;
+            if (e.deltaY > 0) goToSlide(currentIdx + 1);
+            else goToSlide(currentIdx - 1);
+            setTimeout(() => { isLocked = false; }, 1200);
+        }, { passive: true });
+
+        // --- 场景 A: 邮件打字机演示 ---
+        function startEmailDemo() {
+            const area = document.getElementById('email-text');
+            area.innerHTML = '';
+            const initial = "em";
+            const fullText = "你好，尊敬的合作伙伴！\n\n我是 Clipboard Trigger Pro 的开发团队。很高兴能与您沟通。关于本次 V10.2 版本的更新，我们带来了极致的输入稳定性提升和 Excel 联动增强。期待能为您带来更高效率的办公体验！\n\n祝好，\n您的效率助手";
+            
+            let i = 0;
+            function typeInitial() {
+                if(i < initial.length) {
+                    area.innerHTML += initial[i++];
+                    setTimeout(typeInitial, 200);
+                } else {
+                    setTimeout(() => {
+                        createBurstEffect(document.getElementById('email-client'));
+                        area.innerHTML = ''; // 炸裂替换
+                        typeFull(0);
+                    }, 500);
+                }
+            }
+            
+            function typeFull(j) {
+                if(j < fullText.length) {
+                    const char = fullText[j] === '\n' ? '<br>' : fullText[j];
+                    area.innerHTML += char;
+                    setTimeout(() => typeFull(j+1), 20);
+                }
+            }
+            typeInitial();
+        }
+
+        // --- 场景 B: IDE 深度演示 ---
+        function startCodeDemo() {
+            const area = document.getElementById('code-line');
+            const suggest = document.getElementById('suggest-win');
+            area.innerHTML = '';
+            suggest.style.display = 'none';
+
+            // 1. 缓慢输入 ///
+            let i = 0;
+            const slash = "///";
+            function typeSlash() {
+                if(i < slash.length) {
+                    area.innerHTML += slash[i++];
+                    setTimeout(typeSlash, 400);
+                } else {
+                    setTimeout(showMenu, 500);
+                }
+            }
+
+            // 2. 弹出菜单并模拟选择
+            function showMenu() {
+                suggest.style.display = 'block';
+                let step = 0;
+                const items = [1,2,3,4];
+                const interval = setInterval(() => {
+                    items.forEach(idx => document.getElementById(`item-${idx}`).classList.remove('selected'));
+                    document.getElementById(`item-${items[step % 4]}`).classList.add('selected');
+                    step++;
+                    if(step > 6) {
+                        clearInterval(interval);
+                        setTimeout(searchAndExecute, 500);
+                    }
+                }, 300);
+            }
+
+            // 3. 搜索变换并执行
+            function searchAndExecute() {
+                const search = document.getElementById('suggest-search');
+                const query = "变换";
+                let q = 0;
+                const searchInt = setInterval(() => {
+                    search.innerHTML += query[q++];
+                    if(q >= query.length) {
+                        clearInterval(searchInt);
+                        setTimeout(() => {
+                            createBurstEffect(document.getElementById('ide-client'));
+                            area.innerHTML = '<span style="color: #4ec9b0;">Transform</span>()';
+                            suggest.style.display = 'none';
+                        }, 800);
+                    }
+                }, 200);
+            }
+
+            typeSlash();
+        }
+
+        // --- 核心实验场交互 ---
+        const testInput = document.getElementById('test-input');
+        testInput.addEventListener('input', (e) => {
+            const trigger = document.getElementById('config-trigger').value || "abc";
+            const content = document.getElementById('config-content').value || "DONE!";
+            if(e.target.value === trigger) {
+                createBurstEffect(testInput);
+                setTimeout(() => {
+                    testInput.value = content;
+                    testInput.style.fontSize = "2rem";
+                    testInput.style.color = "var(--secondary)";
+                    document.getElementById('test-status').innerText = "SUCCESSFUL EXPLOSION.";
+                }, 100);
+            }
+        });
+
+        // --- Canvas 渲染器 (影视级粒子) ---
+        const canvas = document.getElementById('main-canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let particles = [];
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x; this.y = y;
+                this.size = Math.random() * 3 + 1;
+                this.sx = (Math.random() - 0.5) * 4;
+                this.sy = (Math.random() - 0.5) * 4;
+                this.color = color;
+                this.life = 1;
+            }
+            update() { this.x += this.sx; this.y += this.sy; this.life -= 0.005; }
+            draw() {
+                ctx.globalAlpha = this.life;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
+                ctx.fill();
+            }
+        }
+
+        function createBurstEffect(target) {
+            const rect = target.getBoundingClientRect();
+            const cx = rect.left + rect.width / 2;
+            const cy = rect.top + rect.height / 2;
+            for(let i=0; i<100; i++) {
+                particles.push(new Particle(cx, cy, i%2?'#00f2ff':'#7000ff'));
+            }
+        }
+
+        // 背景氛围
+        let ambient = [];
+        for(let i=0; i<50; i++) {
+            ambient.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                s: Math.random() * 2,
+                v: Math.random() * 0.5
+            });
+        }
+
+        function animate() {
+            ctx.fillStyle = 'rgba(2, 2, 5, 0.2)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // 氛围点
+            ctx.globalAlpha = 0.3;
+            ctx.fillStyle = '#00f2ff';
+            ambient.forEach(p => {
+                p.y -= p.v;
+                if(p.y < 0) p.y = canvas.height;
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.s, 0, Math.PI*2); ctx.fill();
+            });
+
+            // 爆发粒子
+            particles = particles.filter(p => p.life > 0);
+            particles.forEach(p => { p.update(); p.draw(); });
+
+            requestAnimationFrame(animate);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+
+        // 初始化第一页
+        goToSlide(0);
+
+    </script>
+</body>
+</html>
